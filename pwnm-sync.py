@@ -210,7 +210,7 @@ def process_pw_patches(nmdb, project_name, r):
                     not_approved[tag] = 1
                     #print("Not adding tag, as '{}'not in approved list".format(tag))
             #msg.thaw()
-            insert_nm_patch_status(conn,patch['msgid'],project_name,tag)
+            insert_nm_patch_status(conn,patch['msgid'][1:-1],project_name,tag)
         db.end_atomic()
         conn.commit()
         db.close()
@@ -283,7 +283,8 @@ for project in args.sync.split(","):
     conn.execute('''UPDATE nm_patch_status
     SET need_sync=0
     WHERE
-    msgid in (SELECT msgid FROM pw_patch_status WHERE project=? and need_sync=1)''', [project_name])
+    project=? AND
+    msgid in (SELECT msgid FROM pw_patch_status WHERE project=? and need_sync=1)''', [project_name,project_name])
     conn.commit()
 
     # We're now left with need_sync=1 on nm_patch_status for only
