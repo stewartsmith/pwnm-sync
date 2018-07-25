@@ -251,11 +251,10 @@ def update_patchwork(conn,project_name):
                 json={'state': row[1]}).result()
         r =  s.get(patchwork_url + '/patches/{}/'.format(row[0]), headers=headers)
         p = r.result().json()
-        print(p)
         if row[1] == p['state']:
             conn.execute("UPDATE nm_patch_status SET need_sync=0 WHERE msgid=? AND project=?", [row[2],project_name])
         else:
-            print("ERROR State didn't update for {}".format(row[0]))
+            print("ERROR State didn't update for {} - are you maintainer of {}?".format(row[0],project_name))
 
 for project in args.sync.split(","):
     project_name, project_list = project.split("=")
