@@ -65,7 +65,7 @@ def main():
 
 
     pw_token = args.patchwork_token
-    nmdb = args.notmuch_database
+    nmdb = os.path.expanduser(args.notmuch_database)
     sync_db = args.syncdb
 
     conn = sqlite3.connect(sync_db)
