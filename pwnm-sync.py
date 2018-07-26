@@ -257,15 +257,17 @@ def process_pw_patches(session, nmdb, conn, project_name, r):
             c = conn.cursor()
             c.execute("SELECT state from nm_patch_status WHERE msgid=? AND project=? AND need_sync=1",
                       [patch['msgid'][1:-1],project_name])
-            if c.fetchone():
+            curstate = c.fetchone()
+            tag = patch['state']
+            if curstate:
                 print("Going to sync {} to patchwork for {}".format(patch['msgid'],project_name))
+                tag = curstate[0]
 
             #msg.freeze()
             msg.add_tag('pw-{}'.format(project_name))
             for t in all_my_tags:
                 msg.remove_tag('pw-{}-{}'.format(project_name,t))
 
-            tag = patch['state']
             if tag in all_my_tags:
                 msg.add_tag('pw-{}-{}'.format(project_name,tag))
             else:
