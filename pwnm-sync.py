@@ -94,6 +94,8 @@ def main():
 
     for project in args.sync.split(","):
         project_name, project_list = project.split("=")
+        if project_name not in projects:
+            raise Exception("ERROR couldn't find project '%s'" % project_name)
 
         print("Looking at project {} (id {})".format(project_name,projects[project_name]))
         db = notmuch.Database(nmdb)
