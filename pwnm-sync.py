@@ -175,7 +175,10 @@ def populate_nm_patch_status(db,conn,project_name,all_my_tags):
 
 def patchwork_login(session, url):
     patchwork_url = url + '/api'
-    session.get(patchwork_url, stream=False).result()
+    r = session.get(patchwork_url, stream=False).result()
+    if r.status_code != 200:
+        raise Exception("ERROR patchwork API request failed status = %d" % r.status_code)
+
     patchwork_url = patchwork_url + '/1.0'
     return patchwork_url
 
