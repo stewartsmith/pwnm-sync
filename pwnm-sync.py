@@ -47,7 +47,7 @@ argp.add_argument("-t", "--patchwork-token", dest="patchwork_token", type=str,
                   "patchwork instance.")
 argp.add_argument("-p", "--patchwork-url", dest="patchwork_url", type=str,
                   help="The URL to your patchwork instance. Must support REST API.")
-argp.add_argument("-s", "--sync", dest="sync_project", type=str,
+argp.add_argument("-s", "--sync", dest="sync", type=str,
                   help="Projects and lists to sync. " +
                   "In the format project1=list1@server1,project2=list2@server2")
 
