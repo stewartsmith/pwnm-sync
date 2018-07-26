@@ -144,7 +144,7 @@ def get_projects(session, patchwork_url):
 
     return projects
 
-def process_pw_patches(nmdb, project_name, r):
+def process_pw_patches(session, nmdb, project_name, r):
     nr_patches_processed = 0
     not_approved = {}
     done = False
@@ -156,7 +156,7 @@ def process_pw_patches(nmdb, project_name, r):
         # We initiate the async load of the next page now, as we go and make the
         # changes to our local DBs.
         if r.result().links.get('next'):
-            r = s.get(r.result().links['next']['url'], stream=False)
+            r = session.get(r.result().links['next']['url'], stream=False)
         else:
             # This is the last page.
             done = True
@@ -224,17 +224,15 @@ s.headers.update({ 'Authorization': 'Token {}'.format(pw_token) })
 patchwork_url = patchwork_login(s, args.patchwork_url)
 projects = get_projects(s, patchwork_url)
 #print(repr(projects))
-def process_pw_patches_for_project(patchwork_url, project_name, project_id, oldest_msg):
+def process_pw_patches_for_project(session, patchwork_url, project_name, project_id, oldest_msg):
     patches_url = patchwork_url + '/patches'
 
-    r = s.get(patches_url, params= { 'per_page' : 500,
-                                     'since' : oldest_msg,
-                                     'project': project_id, },
-              stream=False)
+    r = session.get(patches_url, stream=False,
+                    params={ 'per_page' : 500, 'since' : oldest_msg, 'project': project_id, })
 
-    process_pw_patches(nmdb, project_name, r)
+    process_pw_patches(session, nmdb, project_name, r)
 
-def update_patchwork(conn,project_name):
+def update_patchwork(session, conn, project_name):
     cur = conn.cursor()
     for row in cur.execute('''
     SELECT
@@ -246,9 +244,9 @@ def update_patchwork(conn,project_name):
       AND pw_patch_status.project=nm_patch_status.project
       AND nm_patch_status.project=? and nm_patch_status.need_sync=1''', [project_name]):
         print("Updating patch {} (id:{}) to {}".format(row[0],row[2],row[1]))
-        s.patch(patchwork_url + '/patches/{}/'.format(row[0]),
+        session.patch(patchwork_url + '/patches/{}/'.format(row[0]),
                 json={'state': row[1]}).result()
-        r =  s.get(patchwork_url + '/patches/{}/'.format(row[0]))
+        r =  session.get(patchwork_url + '/patches/{}/'.format(row[0]))
         p = r.result().json()
         if row[1] == p['state']:
             conn.execute("UPDATE nm_patch_status SET need_sync=0 WHERE msgid=? AND project=?", [row[2],project_name])
@@ -266,7 +264,7 @@ for project in args.sync.split(","):
     db.close() # close the read-only session
 
     # we now have a map of project names to IDs, so we can use that.
-    process_pw_patches_for_project(patchwork_url, project_name, projects[project_name], oldest_msg)
+    process_pw_patches_for_project(s, patchwork_url, project_name, projects[project_name], oldest_msg)
 
     # We now know:
     # 1) What changed locally (nm_patch_status.need_sync=1)
@@ -287,7 +285,7 @@ for project in args.sync.split(","):
 
     # We're now left with need_sync=1 on nm_patch_status for only
     # things we need to update in PW.
-    update_patchwork(conn, project_name)
+    update_patchwork(s, conn, project_name)
 
     # Things only updated in PW, ignore them (we've forced state sync above)
     conn.execute("UPDATE pw_patch_status set need_sync=0 WHERE project=? and need_sync=1", [project_name])
