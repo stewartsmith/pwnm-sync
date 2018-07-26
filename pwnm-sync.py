@@ -1,4 +1,6 @@
 #!/usr/bin/python3
+
+import sys
 import datetime
 import json
 import requests
@@ -9,79 +11,139 @@ import os
 import configparser
 from requests_futures.sessions import FuturesSession
 
-initial_argp = argparse.ArgumentParser(add_help=False)
-initial_argp.add_argument("-c", "--config", dest='config_file', type=str,
-                          help="Configuration file for pwnm-sync",
-                          default=os.path.join(os.path.expanduser("~"),
-                                               ".pwnm-sync.ini"))
 
-args, remaining_argv = initial_argp.parse_known_args()
-argp = argparse.ArgumentParser()
-
-defaults = {
-    "notmuch_database" : os.path.join(os.path.expanduser("~"),"Maildir","INBOX"),
-    "syncdb" :          os.path.join(os.path.expanduser("~"),".pwnm-sync.db"),
-    "patchwork_url" :    "https://patchwork.ozlabs.org",
-    "sync" : "skiboot=skiboot@lists.ozlabs.org"
-    }
-
-if not os.path.isfile(args.config_file):
-    print("Config file {} not found!".format(args.config_file))
-    args.config_file = None
-
-if args.config_file:
-    config = configparser.SafeConfigParser()
-    config.read([args.config_file])
-    config_values = dict(config.items("Defaults"))
-    defaults = {**defaults, **config_values}
-
-argp.set_defaults(**defaults)
-argp.add_argument("-m", "--notmuch-database", dest='notmuch_database', type=str,
-                  help="The notmuch database to sync")
-argp.add_argument("-d", "--syncdb", dest="syncdb", type=str,
-                  help="The path to the sqlite3 database that pwnm-sync " +
-                  "uses to keep track of the state of the local notmuch and " +
-                  "remote patchwork databases.")
-argp.add_argument("-t", "--patchwork-token", dest="patchwork_token", type=str,
-                  help="Your Patchwork API token. Get it from /user/ on your " +
-                  "patchwork instance.")
-argp.add_argument("-p", "--patchwork-url", dest="patchwork_url", type=str,
-                  help="The URL to your patchwork instance. Must support REST API.")
-argp.add_argument("-s", "--sync", dest="sync", type=str,
-                  help="Projects and lists to sync. " +
-                  "In the format project1=list1@server1,project2=list2@server2")
-
-args = argp.parse_args(remaining_argv)
-print(args)
+all_my_tags = ['accepted', 'superseded', 'changes-requested', 'rfc',
+               'rejected', 'new', 'under-review', 'not-applicable', 'deferred',
+               'awaiting-upstream']
 
 
-pw_token = args.patchwork_token
-nmdb = args.notmuch_database
-sync_db = args.syncdb
+def main():
+    initial_argp = argparse.ArgumentParser(add_help=False)
+    initial_argp.add_argument("-c", "--config", dest='config_file', type=str,
+                            help="Configuration file for pwnm-sync",
+                            default=os.path.join(os.path.expanduser("~"),
+                                                ".pwnm-sync.ini"))
 
-conn = sqlite3.connect(sync_db)
+    args, remaining_argv = initial_argp.parse_known_args()
+    argp = argparse.ArgumentParser()
 
-conn.execute('''CREATE TABLE IF NOT EXISTS pw_patch_status (
-msgid text,
-project text,
-need_sync bool,
-patchid int unique,
-state text,
-PRIMARY KEY(msgid,project))''')
-conn.execute('''CREATE TABLE IF NOT EXISTS nm_patch_status (
-msgid text,
-project text,
-need_sync bool,
-state text,
-PRIMARY KEY(msgid,project))''')
-conn.commit()
+    defaults = {
+        "notmuch_database" : os.path.join(os.path.expanduser("~"),"Maildir","INBOX"),
+        "syncdb" :          os.path.join(os.path.expanduser("~"),".pwnm-sync.db"),
+        "patchwork_url" :    "https://patchwork.ozlabs.org",
+        "sync" : "skiboot=skiboot@lists.ozlabs.org",
+        "epoch" : None,
+        }
 
-all_my_tags = ['accepted', 'superseded', 'changes-requested',
-               'rfc', 'rejected', 'new', 'under-review',
-               'not-applicable', 'deferred', 'awaiting-upstream']
+    if not os.path.isfile(args.config_file):
+        print("Config file {} not found!".format(args.config_file))
+        args.config_file = None
+
+    if args.config_file:
+        config = configparser.SafeConfigParser()
+        config.read([args.config_file])
+        config_values = dict(config.items("Defaults"))
+        defaults = {**defaults, **config_values}
+
+    argp.set_defaults(**defaults)
+    argp.add_argument("-m", "--notmuch-database", dest='notmuch_database', type=str,
+                    help="The notmuch database to sync")
+    argp.add_argument("-d", "--syncdb", dest="syncdb", type=str,
+                    help="The path to the sqlite3 database that pwnm-sync " +
+                    "uses to keep track of the state of the local notmuch and " +
+                    "remote patchwork databases.")
+    argp.add_argument("-t", "--patchwork-token", dest="patchwork_token", type=str,
+                    help="Your Patchwork API token. Get it from /user/ on your " +
+                    "patchwork instance.")
+    argp.add_argument("-p", "--patchwork-url", dest="patchwork_url", type=str,
+                    help="The URL to your patchwork instance. Must support REST API.")
+    argp.add_argument("-s", "--sync", dest="sync", type=str,
+                    help="Projects and lists to sync. " +
+                    "In the format project1=list1@server1,project2=list2@server2")
+    argp.add_argument("-e", "--epoch", dest="epoch",
+                      type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d'),
+                      help="Only consider patches on or after this date")
+
+    args = argp.parse_args(remaining_argv)
+    print(args)
 
 
-headers = { 'Authorization': 'Token {}'.format(pw_token) }
+    pw_token = args.patchwork_token
+    nmdb = os.path.expanduser(args.notmuch_database)
+    sync_db = args.syncdb
+
+    conn = sqlite3.connect(sync_db)
+
+    conn.execute('''CREATE TABLE IF NOT EXISTS pw_patch_status (
+    msgid text,
+    project text,
+    need_sync bool,
+    patchid int unique,
+    state text,
+    PRIMARY KEY(msgid,project))''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS nm_patch_status (
+    msgid text,
+    project text,
+    need_sync bool,
+    state text,
+    PRIMARY KEY(msgid,project))''')
+    conn.commit()
+
+    s = FuturesSession()
+    s.headers.update({ 'Authorization': 'Token {}'.format(pw_token) })
+
+    patchwork_url = patchwork_login(s, args.patchwork_url)
+    projects = get_projects(s, patchwork_url)
+    #print(repr(projects))
+
+    for project in args.sync.split(","):
+        project_name, project_list = project.split("=")
+        if project_name not in projects:
+            raise Exception("ERROR couldn't find project '%s'" % project_name)
+
+        print("Looking at project {} (id {})".format(project_name,projects[project_name]))
+        db = notmuch.Database(nmdb)
+
+        if args.epoch is None:
+            oldest_msg = get_oldest_nm_message(db, project_list)
+        else:
+            oldest_msg = args.epoch
+
+        print("Going to look at things post {}".format(oldest_msg))
+        populate_nm_patch_status(db,conn,project_name,all_my_tags)
+        db.close() # close the read-only session
+
+        # we now have a map of project names to IDs, so we can use that.
+        process_pw_patches_for_project(s, nmdb, conn, patchwork_url, project_name, projects[project_name], oldest_msg)
+
+        # We now know:
+        # 1) What changed locally (nm_patch_status.need_sync=1)
+        # 2) What changed remotely (pw_patch_status.need_sync=1)
+        # 3) What has update conflicts (union of 1 and 2)
+        # Current algorithm for conflicts is "take patchwork status"
+
+        # This syncs the DB for anything with a update conflict
+        #
+        # We've already applied the PW status in the loop above.
+        conn.execute("BEGIN")
+        conn.execute('''UPDATE nm_patch_status
+        SET need_sync=0
+        WHERE
+        project=? AND
+        msgid in (SELECT msgid FROM pw_patch_status WHERE project=? and need_sync=1)''', [project_name,project_name])
+        conn.commit()
+
+        # We're now left with need_sync=1 on nm_patch_status for only
+        # things we need to update in PW.
+        update_patchwork(s, conn, project_name)
+
+        # Things only updated in PW, ignore them (we've forced state sync above)
+        conn.execute("UPDATE pw_patch_status set need_sync=0 WHERE project=? and need_sync=1", [project_name])
+
+        conn.commit()
+
+    #print(json.dumps(r.json(), indent=2))
+
 
 def get_oldest_nm_message(db, project_list):
     pw_list = 'to:{}'.format(project_list)
@@ -122,7 +184,10 @@ def populate_nm_patch_status(db,conn,project_name,all_my_tags):
 
 def patchwork_login(session, url):
     patchwork_url = url + '/api'
-    session.get(patchwork_url, headers=headers,stream=False).result()
+    r = session.get(patchwork_url, stream=False).result()
+    if r.status_code != 200:
+        raise Exception("ERROR patchwork API request failed status = %d" % r.status_code)
+
     patchwork_url = patchwork_url + '/1.0'
     return patchwork_url
 
@@ -132,7 +197,7 @@ def get_projects(session, patchwork_url):
 
     projects = {}
     while True:
-        r = session.get(url, params = {'per_page': 100}, headers=headers, stream=False).result()
+        r = session.get(url, params = {'per_page': 100}, stream=False).result()
         p = r.json()
 
         for project in p:
@@ -146,7 +211,7 @@ def get_projects(session, patchwork_url):
 
     return projects
 
-def process_pw_patches(nmdb, project_name, r):
+def process_pw_patches(session, nmdb, conn, project_name, r):
     nr_patches_processed = 0
     not_approved = {}
     done = False
@@ -158,7 +223,7 @@ def process_pw_patches(nmdb, project_name, r):
         # We initiate the async load of the next page now, as we go and make the
         # changes to our local DBs.
         if r.result().links.get('next'):
-            r = s.get(r.result().links['next']['url'], headers=headers, stream=False)
+            r = session.get(r.result().links['next']['url'], stream=False)
         else:
             # This is the last page.
             done = True
@@ -220,21 +285,16 @@ def process_pw_patches(nmdb, project_name, r):
     print("Finished processing {} {} patches!".format(nr_patches_processed, project_name))
     print(not_approved)
 
-s = FuturesSession()
-patchwork_url = patchwork_login(s, args.patchwork_url)
-projects = get_projects(s, patchwork_url)
-#print(repr(projects))
-def process_pw_patches_for_project(patchwork_url, project_name, project_id, oldest_msg):
+
+def process_pw_patches_for_project(session, nmdb, conn, patchwork_url, project_name, project_id, oldest_msg):
     patches_url = patchwork_url + '/patches'
 
-    r = s.get(patches_url, params= { 'per_page' : 500,
-                                     'since' : oldest_msg,
-                                     'project': project_id, },
-              headers=headers, stream=False)
+    r = session.get(patches_url, stream=False,
+                    params={ 'per_page' : 500, 'since' : oldest_msg, 'project': project_id, })
 
-    process_pw_patches(nmdb, project_name, r)
+    process_pw_patches(session, nmdb, conn, project_name, r)
 
-def update_patchwork(conn,project_name):
+def update_patchwork(session, conn, project_name):
     cur = conn.cursor()
     for row in cur.execute('''
     SELECT
@@ -246,53 +306,24 @@ def update_patchwork(conn,project_name):
       AND pw_patch_status.project=nm_patch_status.project
       AND nm_patch_status.project=? and nm_patch_status.need_sync=1''', [project_name]):
         print("Updating patch {} (id:{}) to {}".format(row[0],row[2],row[1]))
-        s.patch(patchwork_url + '/patches/{}/'.format(row[0]),
-                headers=headers,
+        session.patch(patchwork_url + '/patches/{}/'.format(row[0]),
                 json={'state': row[1]}).result()
-        r =  s.get(patchwork_url + '/patches/{}/'.format(row[0]), headers=headers)
+        r =  session.get(patchwork_url + '/patches/{}/'.format(row[0]))
         p = r.result().json()
         if row[1] == p['state']:
             conn.execute("UPDATE nm_patch_status SET need_sync=0 WHERE msgid=? AND project=?", [row[2],project_name])
         else:
             print("ERROR State didn't update for {} - are you maintainer of {}?".format(row[0],project_name))
 
-for project in args.sync.split(","):
-    project_name, project_list = project.split("=")
 
-    print("Looking at project {} (id {})".format(project_name,projects[project_name]))
-    db = notmuch.Database(nmdb)
-    oldest_msg = get_oldest_nm_message(db, project_list)
-    print("Going to look at things post {}".format(oldest_msg))
-    populate_nm_patch_status(db,conn,project_name,all_my_tags)
-    db.close() # close the read-only session
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as e:
+        # Uncomment for stack trace
+        #import traceback
+        #traceback.print_exc()
+        print("Error", e)
+        sys.exit(1)
 
-    # we now have a map of project names to IDs, so we can use that.
-    process_pw_patches_for_project(patchwork_url, project_name, projects[project_name], oldest_msg)
-
-    # We now know:
-    # 1) What changed locally (nm_patch_status.need_sync=1)
-    # 2) What changed remotely (pw_patch_status.need_sync=1)
-    # 3) What has update conflicts (union of 1 and 2)
-    # Current algorithm for conflicts is "take patchwork status"
-
-    # This syncs the DB for anything with a update conflict
-    #
-    # We've already applied the PW status in the loop above.
-    conn.execute("BEGIN")
-    conn.execute('''UPDATE nm_patch_status
-    SET need_sync=0
-    WHERE
-    project=? AND
-    msgid in (SELECT msgid FROM pw_patch_status WHERE project=? and need_sync=1)''', [project_name,project_name])
-    conn.commit()
-
-    # We're now left with need_sync=1 on nm_patch_status for only
-    # things we need to update in PW.
-    update_patchwork(conn, project_name)
-
-    # Things only updated in PW, ignore them (we've forced state sync above)
-    conn.execute("UPDATE pw_patch_status set need_sync=0 WHERE project=? and need_sync=1", [project_name])
-
-    conn.commit()
-
-#print(json.dumps(r.json(), indent=2))
+    sys.exit(0)
