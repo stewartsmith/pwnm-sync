@@ -31,7 +31,8 @@ def main():
         "notmuch_database" : os.path.join(os.path.expanduser("~"),"Maildir","INBOX"),
         "syncdb" :          os.path.join(os.path.expanduser("~"),".pwnm-sync.db"),
         "patchwork_url" :    "https://patchwork.ozlabs.org",
-        "sync" : "skiboot=skiboot@lists.ozlabs.org"
+        "sync" : "skiboot=skiboot@lists.ozlabs.org",
+        "epoch" : None,
         }
 
     if not os.path.isfile(args.config_file):
@@ -59,6 +60,9 @@ def main():
     argp.add_argument("-s", "--sync", dest="sync", type=str,
                     help="Projects and lists to sync. " +
                     "In the format project1=list1@server1,project2=list2@server2")
+    argp.add_argument("-e", "--epoch", dest="epoch",
+                      type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d'),
+                      help="Only consider patches on or after this date")
 
     args = argp.parse_args(remaining_argv)
     print(args)
@@ -99,7 +103,12 @@ def main():
 
         print("Looking at project {} (id {})".format(project_name,projects[project_name]))
         db = notmuch.Database(nmdb)
-        oldest_msg = get_oldest_nm_message(db, project_list)
+
+        if args.epoch is None:
+            oldest_msg = get_oldest_nm_message(db, project_list)
+        else:
+            oldest_msg = args.epoch
+
         print("Going to look at things post {}".format(oldest_msg))
         populate_nm_patch_status(db,conn,project_name,all_my_tags)
         db.close() # close the read-only session
