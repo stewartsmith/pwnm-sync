@@ -81,8 +81,6 @@ all_my_tags = ['accepted', 'superseded', 'changes-requested',
                'not-applicable', 'deferred', 'awaiting-upstream']
 
 
-headers = { 'Authorization': 'Token {}'.format(pw_token) }
-
 def get_oldest_nm_message(db, project_list):
     pw_list = 'to:{}'.format(project_list)
     qstr = pw_list
@@ -122,7 +120,7 @@ def populate_nm_patch_status(db,conn,project_name,all_my_tags):
 
 def patchwork_login(session, url):
     patchwork_url = url + '/api'
-    session.get(patchwork_url, headers=headers,stream=False).result()
+    session.get(patchwork_url, stream=False).result()
     patchwork_url = patchwork_url + '/1.0'
     return patchwork_url
 
@@ -132,7 +130,7 @@ def get_projects(session, patchwork_url):
 
     projects = {}
     while True:
-        r = session.get(url, params = {'per_page': 100}, headers=headers, stream=False).result()
+        r = session.get(url, params = {'per_page': 100}, stream=False).result()
         p = r.json()
 
         for project in p:
@@ -158,7 +156,7 @@ def process_pw_patches(nmdb, project_name, r):
         # We initiate the async load of the next page now, as we go and make the
         # changes to our local DBs.
         if r.result().links.get('next'):
-            r = s.get(r.result().links['next']['url'], headers=headers, stream=False)
+            r = s.get(r.result().links['next']['url'], stream=False)
         else:
             # This is the last page.
             done = True
@@ -221,6 +219,8 @@ def process_pw_patches(nmdb, project_name, r):
     print(not_approved)
 
 s = FuturesSession()
+s.headers.update({ 'Authorization': 'Token {}'.format(pw_token) })
+
 patchwork_url = patchwork_login(s, args.patchwork_url)
 projects = get_projects(s, patchwork_url)
 #print(repr(projects))
@@ -230,7 +230,7 @@ def process_pw_patches_for_project(patchwork_url, project_name, project_id, olde
     r = s.get(patches_url, params= { 'per_page' : 500,
                                      'since' : oldest_msg,
                                      'project': project_id, },
-              headers=headers, stream=False)
+              stream=False)
 
     process_pw_patches(nmdb, project_name, r)
 
@@ -247,9 +247,8 @@ def update_patchwork(conn,project_name):
       AND nm_patch_status.project=? and nm_patch_status.need_sync=1''', [project_name]):
         print("Updating patch {} (id:{}) to {}".format(row[0],row[2],row[1]))
         s.patch(patchwork_url + '/patches/{}/'.format(row[0]),
-                headers=headers,
                 json={'state': row[1]}).result()
-        r =  s.get(patchwork_url + '/patches/{}/'.format(row[0]), headers=headers)
+        r =  s.get(patchwork_url + '/patches/{}/'.format(row[0]))
         p = r.result().json()
         if row[1] == p['state']:
             conn.execute("UPDATE nm_patch_status SET need_sync=0 WHERE msgid=? AND project=?", [row[2],project_name])
