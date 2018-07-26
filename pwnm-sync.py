@@ -135,7 +135,7 @@ def main():
 
         # We're now left with need_sync=1 on nm_patch_status for only
         # things we need to update in PW.
-        update_patchwork(s, conn, project_name)
+        update_patchwork(s, conn, patchwork_url, project_name)
 
         # Things only updated in PW, ignore them (we've forced state sync above)
         conn.execute("UPDATE pw_patch_status set need_sync=0 WHERE project=? and need_sync=1", [project_name])
@@ -294,7 +294,7 @@ def process_pw_patches_for_project(session, nmdb, conn, patchwork_url, project_n
 
     process_pw_patches(session, nmdb, conn, project_name, r)
 
-def update_patchwork(session, conn, project_name):
+def update_patchwork(session, conn, patchwork_url, project_name):
     cur = conn.cursor()
     for row in cur.execute('''
     SELECT
