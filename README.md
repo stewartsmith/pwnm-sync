@@ -32,6 +32,10 @@ This means I take the defaults for other config options (see --help),
 such as where my notmuch database lives and the path to the sqlite3
 database that helps maintain state for pwnm-sync.
 
+Each mail message (i.e. patch) that's in patchwork gets a `patchwork` tag.
+Additionally, they will get extra tags based on the state of the patch in
+patchwork.
+
 Each patchwork project you sync gets a tag 'pw-{project}' to
 signify that a mail is in the patchwork for that project. A
 patch may be in multiple projects (e.g. a patch is CC'd to

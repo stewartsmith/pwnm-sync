@@ -265,6 +265,7 @@ def process_pw_patches(session, nmdb, conn, project_name, r):
 
             #msg.freeze()
             msg.add_tag('pw-{}'.format(project_name))
+            msg.add_tag('patchwork')
             for t in all_my_tags:
                 msg.remove_tag('pw-{}-{}'.format(project_name,t))
 
