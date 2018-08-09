@@ -72,6 +72,11 @@ If you break the rules like putting multiple pw-{project}-{state} tags
 for the same project, then err... something probably not great will happen.
 PATCHES WELCOME.
 
+LICENSE
+=======
+
+GPLv3+ - see LICENSE file.
+
 CONTRIBUTING
 ============
 
