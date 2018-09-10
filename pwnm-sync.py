@@ -20,8 +20,6 @@
 
 import sys
 import datetime
-import json
-import requests
 import notmuch
 import sqlite3
 import argparse
