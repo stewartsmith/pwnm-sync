@@ -80,7 +80,7 @@ GPLv3+ - see LICENSE file.
 CONTRIBUTING
 ============
 
-Send patches to stewart@linux.ibm.com or use a GitHub Pull request.
+Send patches to stewart@flamingspork.com or use a GitHub Pull request.
 
 Please ensure all contributions follow Developer Certificate of Origin:
 
